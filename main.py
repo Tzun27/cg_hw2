@@ -9,8 +9,8 @@ from PIL import Image
 import math
 
 # Import our modular components
-from morph_algorithm import warp_image_with_lines, interpolate_lines, blend_images
-from ui_helpers import display_image_on_canvas, redraw_canvas_with_lines, scale_lines_to_image
+from morph_algorithm import warp_image_with_lines, interpolate_lines, blend_images, generate_grid, warp_grid_points
+from ui_helpers import display_image_on_canvas, redraw_canvas_with_lines, scale_lines_to_image, display_image_with_grid_overlay
 
 
 def main():
@@ -151,6 +151,12 @@ def main():
     
     btn_seq_anim = ttk.Button(control_frame, text="Sequential Animation")
     btn_seq_anim.pack(side=tk.LEFT)
+    
+    # Grid visualization toggle
+    show_grid_var = tk.BooleanVar(value=False)
+    grid_checkbox = ttk.Checkbutton(control_frame, text="Show Grid Visualization", 
+                                    variable=show_grid_var)
+    grid_checkbox.pack(side=tk.LEFT, padx=(20, 0))
     
     # Output section
     output_frame = ttk.LabelFrame(main_frame, text="Morphing Results", padding="10")
@@ -446,10 +452,34 @@ def main():
             root.update()
             blended = blend_images(warped1, warped2, alpha)
             
-            # Display results
-            display_image_on_canvas(warped1, output1_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
-            display_image_on_canvas(warped2, output2_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
-            display_image_on_canvas(blended, output3_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
+            # Display results with optional grid visualization
+            if show_grid_var.get():
+                status_label.config(text="Computing grid visualization...")
+                root.update()
+                
+                # Generate grid for the image
+                grid_lines = generate_grid(target_size[0], target_size[1], grid_spacing=30)
+                
+                # Warp grid from image1 to interpolated position
+                warped_grid1 = warp_grid_points(grid_lines, lines1_scaled, lines_interp, 
+                                                a=0.01, b=2.0, p=0.0, samples_per_line=20)
+                
+                # Warp grid from image2 to interpolated position
+                warped_grid2 = warp_grid_points(grid_lines, lines2_scaled, lines_interp, 
+                                                a=0.01, b=2.0, p=0.0, samples_per_line=20)
+                
+                # Display images with grid overlays
+                display_image_with_grid_overlay(warped1, output1_canvas, warped_grid1, 
+                                               CANVAS_WIDTH, CANVAS_HEIGHT, grid_color="cyan")
+                display_image_with_grid_overlay(warped2, output2_canvas, warped_grid2, 
+                                               CANVAS_WIDTH, CANVAS_HEIGHT, grid_color="yellow")
+                display_image_with_grid_overlay(blended, output3_canvas, warped_grid1,  # Can show either grid or blend
+                                               CANVAS_WIDTH, CANVAS_HEIGHT, grid_color="lime")
+            else:
+                # Display without grid overlay
+                display_image_on_canvas(warped1, output1_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
+                display_image_on_canvas(warped2, output2_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
+                display_image_on_canvas(blended, output3_canvas, CANVAS_WIDTH, CANVAS_HEIGHT)
             
             status_label.config(text=f"Morphing complete! Alpha={alpha}, {len(lines_image1)} line pairs used")
             
@@ -467,14 +497,14 @@ def main():
     btn_warp_anim.config(command=lambda: create_warp_animation(
         root, status_label, output1_canvas, output2_canvas, output3_canvas,
         image1_original, image2_original, lines_image1, lines_image2,
-        is_three_image_mode, CANVAS_WIDTH, CANVAS_HEIGHT
+        is_three_image_mode, CANVAS_WIDTH, CANVAS_HEIGHT, show_grid_var.get()
     ))
     
     btn_seq_anim.config(command=lambda: create_sequential_animation(
         root, status_label, output3_canvas,
         image1_original, image2_original, image3_original,
         lines_image1, lines_image2, lines_image3,
-        is_three_image_mode, CANVAS_WIDTH, CANVAS_HEIGHT
+        is_three_image_mode, CANVAS_WIDTH, CANVAS_HEIGHT, show_grid_var.get()
     ))
     
     # Start the GUI event loop

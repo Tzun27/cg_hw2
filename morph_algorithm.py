@@ -236,4 +236,121 @@ def blend_images(img1, img2, alpha):
     return Image.fromarray(blended_arr.astype(np.uint8))
 
 
+def generate_grid(width, height, grid_spacing=20):
+    """
+    Generate a grid of horizontal and vertical lines.
+    
+    Args:
+        width: Image width
+        height: Image height
+        grid_spacing: Spacing between grid lines in pixels
+    
+    Returns:
+        List of grid lines as [((x1, y1), (x2, y2)), ...]
+    """
+    grid_lines = []
+    
+    # Horizontal lines
+    y = 0
+    while y <= height:
+        grid_lines.append(((0, y), (width, y)))
+        y += grid_spacing
+    
+    # Vertical lines
+    x = 0
+    while x <= width:
+        grid_lines.append(((x, 0), (x, height)))
+        x += grid_spacing
+    
+    return grid_lines
+
+
+def warp_grid_points(grid_lines, source_lines, dest_lines, a=0.01, b=2.0, p=0.0, samples_per_line=20):
+    """
+    Warp grid line points using the same feature-based warping algorithm.
+    This visualizes how the grid deforms according to feature lines.
+    
+    Args:
+        grid_lines: List of grid lines [((x1, y1), (x2, y2)), ...]
+        source_lines: Source feature lines
+        dest_lines: Destination feature lines
+        a, b, p: Warping parameters (same as warp_image_with_lines)
+        samples_per_line: Number of sample points per grid line for smooth curves
+    
+    Returns:
+        List of warped grid lines [[(x1, y1), (x2, y2), ...], ...]
+        Each line is a list of points showing the warped path
+    """
+    warped_grid_lines = []
+    
+    for grid_line in grid_lines:
+        P_grid, Q_grid = grid_line
+        warped_points = []
+        
+        # Sample points along the grid line
+        for i in range(samples_per_line + 1):
+            t = i / samples_per_line
+            # Interpolate along the grid line
+            x = P_grid[0] * (1 - t) + Q_grid[0] * t
+            y = P_grid[1] * (1 - t) + Q_grid[1] * t
+            
+            X = np.array([x, y], dtype=float)
+            
+            # Apply the same warping algorithm as for pixels
+            if len(dest_lines) == 0:
+                warped_points.append((x, y))
+                continue
+            
+            # Multiple line algorithm
+            DSUM = np.array([0.0, 0.0])
+            weightsum = 0.0
+            
+            for i in range(len(dest_lines)):
+                P, Q = dest_lines[i]
+                P_prime, Q_prime = source_lines[i]
+                
+                # Calculate u, v based on destination line
+                u, v = compute_uv(X, P, Q)
+                
+                # Calculate X'i based on u,v and source line
+                X_prime_i = compute_X_prime(u, v, P_prime, Q_prime)
+                
+                # Displacement Di = X'i - X
+                D_i = X_prime_i - X
+                
+                # Calculate distance from X to destination line
+                P_arr = np.array(P, dtype=float)
+                Q_arr = np.array(Q, dtype=float)
+                PQ = Q_arr - P_arr
+                length_PQ = np.linalg.norm(PQ)
+                
+                if length_PQ < 1e-6:
+                    dist = np.linalg.norm(X - P_arr)
+                else:
+                    if u < 0:
+                        dist = np.linalg.norm(X - P_arr)
+                    elif u > 1:
+                        dist = np.linalg.norm(X - Q_arr)
+                    else:
+                        dist = abs(v)
+                
+                # Weight calculation
+                weight = (length_PQ ** p) / ((a + dist) ** b)
+                
+                DSUM += D_i * weight
+                weightsum += weight
+            
+            # Calculate final warped position
+            if weightsum > 0:
+                X_warped = X + DSUM / weightsum
+            else:
+                X_warped = X
+            
+            warped_points.append((X_warped[0], X_warped[1]))
+        
+        warped_grid_lines.append(warped_points)
+    
+    return warped_grid_lines
+
+
 

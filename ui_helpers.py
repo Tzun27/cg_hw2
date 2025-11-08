@@ -107,4 +107,63 @@ def scale_lines_to_image(lines_canvas, canvas_width, canvas_height, image_width,
     return lines_scaled
 
 
+def draw_warped_grid_overlay(canvas, warped_grid_lines, canvas_width, canvas_height, image_width, image_height, color="cyan", width=1):
+    """
+    Draw warped grid lines as an overlay on the canvas.
+    
+    Args:
+        canvas: tkinter Canvas widget
+        warped_grid_lines: List of warped grid lines, each is a list of points [(x1, y1), (x2, y2), ...]
+        canvas_width: Width of canvas
+        canvas_height: Height of canvas
+        image_width: Width of actual image
+        image_height: Height of actual image
+        color: Color of grid lines (default: cyan)
+        width: Width of grid lines (default: 1)
+    """
+    # Scale factor from image coordinates to canvas coordinates
+    scale_x = canvas_width / image_width
+    scale_y = canvas_height / image_height
+    
+    # Draw each warped grid line
+    for warped_line in warped_grid_lines:
+        # Convert points to canvas coordinates and draw segments
+        for i in range(len(warped_line) - 1):
+            x1, y1 = warped_line[i]
+            x2, y2 = warped_line[i + 1]
+            
+            # Scale to canvas coordinates
+            canvas_x1 = x1 * scale_x
+            canvas_y1 = y1 * scale_y
+            canvas_x2 = x2 * scale_x
+            canvas_y2 = y2 * scale_y
+            
+            # Draw line segment
+            canvas.create_line(canvas_x1, canvas_y1, canvas_x2, canvas_y2, 
+                             fill=color, width=width, tags="grid_overlay")
+
+
+def display_image_with_grid_overlay(image, canvas, warped_grid_lines, canvas_width=400, canvas_height=300, grid_color="cyan"):
+    """
+    Display an image on canvas with warped grid overlay.
+    
+    Args:
+        image: PIL Image to display
+        canvas: tkinter Canvas widget
+        warped_grid_lines: List of warped grid lines to overlay
+        canvas_width: Width of canvas
+        canvas_height: Height of canvas
+        grid_color: Color of grid lines
+    """
+    # First display the image
+    display_image_on_canvas(image, canvas, canvas_width, canvas_height)
+    
+    # Then draw grid overlay
+    if warped_grid_lines and len(warped_grid_lines) > 0:
+        draw_warped_grid_overlay(canvas, warped_grid_lines, 
+                                canvas_width, canvas_height,
+                                image.size[0], image.size[1],
+                                color=grid_color, width=1)
+
+
 
