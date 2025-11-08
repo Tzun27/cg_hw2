@@ -8,7 +8,7 @@ from ui_helpers import display_image_on_canvas, scale_lines_to_image, display_im
 from PIL import Image
 
 
-def create_warp_animation(root, status_label, output1_canvas, output2_canvas, output3_canvas,
+def create_warp_animation(root, status_label, output1_canvas, output2_canvas, output3_canvas, output4_canvas,
                           image1_original, image2_original, lines_image1, lines_image2,
                           is_three_image_mode, canvas_width, canvas_height, show_grid=False):
     """
@@ -118,12 +118,14 @@ def create_warp_animation(root, status_label, output1_canvas, output2_canvas, ou
                                                canvas_width, canvas_height, grid_color="cyan")
                 display_image_with_grid_overlay(warped2, output2_canvas, warped_grid2, 
                                                canvas_width, canvas_height, grid_color="yellow")
-                display_image_with_grid_overlay(blended, output3_canvas, warped_grid1, 
+                output3_canvas.delete("all")  # Clear image 3 canvas (not used in 2-image mode)
+                display_image_with_grid_overlay(blended, output4_canvas, warped_grid1, 
                                                canvas_width, canvas_height, grid_color="lime")
             else:
                 display_image_on_canvas(warped1, output1_canvas, canvas_width, canvas_height)
                 display_image_on_canvas(warped2, output2_canvas, canvas_width, canvas_height)
-                display_image_on_canvas(blended, output3_canvas, canvas_width, canvas_height)
+                output3_canvas.delete("all")  # Clear image 3 canvas (not used in 2-image mode)
+                display_image_on_canvas(blended, output4_canvas, canvas_width, canvas_height)
             
             # Update status with direction indicator
             direction_str = "→" if direction == 1 else "←"
@@ -157,7 +159,7 @@ def create_warp_animation(root, status_label, output1_canvas, output2_canvas, ou
         status_label.config(text="Animation failed - see error message")
 
 
-def create_sequential_animation(root, status_label, output_canvas,
+def create_sequential_animation(root, status_label, output1_canvas, output2_canvas, output3_canvas, output4_canvas,
                                 image1_original, image2_original, image3_original,
                                 lines_image1, lines_image2, lines_image3,
                                 is_three_image_mode, canvas_width, canvas_height, show_grid=False):
@@ -233,14 +235,18 @@ def create_sequential_animation(root, status_label, output_canvas,
             
             blended = blend_images(warped1, warped2, alpha)
             
-            # Warp grid if visualization is enabled
-            warped_grid = None
+            # Warp grids if visualization is enabled
+            warped_grid1 = None
+            warped_grid2 = None
             if show_grid and grid_lines:
-                # Show grid warped from image 1 perspective
-                warped_grid = warp_grid_points(grid_lines, lines1_scaled, lines_interp, 
+                warped_grid1 = warp_grid_points(grid_lines, lines1_scaled, lines_interp, 
+                                              a=0.01, b=2.0, p=0.0, samples_per_line=20)
+                warped_grid2 = warp_grid_points(grid_lines, lines2_scaled, lines_interp, 
                                               a=0.01, b=2.0, p=0.0, samples_per_line=20)
             
-            frames_1_to_2.append((alpha, blended, f"1→2: α={alpha:.1f}", warped_grid))
+            # Store: alpha, warped1, warped2, None (no warped3), blended, desc, grids
+            frames_1_to_2.append((alpha, warped1, warped2, None, blended, f"1→2: α={alpha:.1f}", 
+                                 warped_grid1, warped_grid2, None))
             
             status_label.config(text=f"Computing 1→2 frame {len(frames_1_to_2)}/{len(alpha_steps)}...")
             root.update()
@@ -258,14 +264,18 @@ def create_sequential_animation(root, status_label, output_canvas,
             
             blended = blend_images(warped2, warped3, alpha)
             
-            # Warp grid if visualization is enabled
-            warped_grid = None
+            # Warp grids if visualization is enabled
+            warped_grid2 = None
+            warped_grid3 = None
             if show_grid and grid_lines:
-                # Show grid warped from image 2 perspective
-                warped_grid = warp_grid_points(grid_lines, lines2_scaled, lines_interp, 
+                warped_grid2 = warp_grid_points(grid_lines, lines2_scaled, lines_interp, 
+                                              a=0.01, b=2.0, p=0.0, samples_per_line=20)
+                warped_grid3 = warp_grid_points(grid_lines, lines3_scaled, lines_interp, 
                                               a=0.01, b=2.0, p=0.0, samples_per_line=20)
             
-            frames_2_to_3.append((alpha, blended, f"2→3: α={alpha:.1f}", warped_grid))
+            # Store: alpha, None (no warped1), warped2, warped3, blended, desc, grids
+            frames_2_to_3.append((alpha, None, warped2, warped3, blended, f"2→3: α={alpha:.1f}", 
+                                 None, warped_grid2, warped_grid3))
             
             status_label.config(text=f"Computing 2→3 frame {len(frames_2_to_3)}/{len(alpha_steps)}...")
             root.update()
@@ -294,14 +304,54 @@ def create_sequential_animation(root, status_label, output_canvas,
                 return
             
             # Get current frame
-            alpha, blended, desc, warped_grid = all_frames[current_frame]
+            alpha, warped1, warped2, warped3, blended, desc, grid1, grid2, grid3 = all_frames[current_frame]
             
-            # Display result with optional grid overlay
-            if show_grid and warped_grid:
-                display_image_with_grid_overlay(blended, output_canvas, warped_grid, 
-                                               canvas_width, canvas_height, grid_color="lime")
+            # Display all warped images and blend
+            if show_grid:
+                # Display with grid overlays
+                if warped1 and grid1:
+                    display_image_with_grid_overlay(warped1, output1_canvas, grid1, 
+                                                   canvas_width, canvas_height, grid_color="cyan")
+                else:
+                    output1_canvas.delete("all")
+                
+                if warped2 and grid2:
+                    display_image_with_grid_overlay(warped2, output2_canvas, grid2, 
+                                                   canvas_width, canvas_height, grid_color="yellow")
+                else:
+                    output2_canvas.delete("all")
+                
+                if warped3 and grid3:
+                    display_image_with_grid_overlay(warped3, output3_canvas, grid3, 
+                                                   canvas_width, canvas_height, grid_color="magenta")
+                else:
+                    output3_canvas.delete("all")
+                
+                # Display blend with grid overlay (use grid1 or grid2 depending on which exists)
+                blend_grid = grid1 if grid1 else grid2
+                if blend_grid:
+                    display_image_with_grid_overlay(blended, output4_canvas, blend_grid, 
+                                                   canvas_width, canvas_height, grid_color="lime")
+                else:
+                    display_image_on_canvas(blended, output4_canvas, canvas_width, canvas_height)
             else:
-                display_image_on_canvas(blended, output_canvas, canvas_width, canvas_height)
+                # Display without grid overlays
+                if warped1:
+                    display_image_on_canvas(warped1, output1_canvas, canvas_width, canvas_height)
+                else:
+                    output1_canvas.delete("all")
+                
+                if warped2:
+                    display_image_on_canvas(warped2, output2_canvas, canvas_width, canvas_height)
+                else:
+                    output2_canvas.delete("all")
+                
+                if warped3:
+                    display_image_on_canvas(warped3, output3_canvas, canvas_width, canvas_height)
+                else:
+                    output3_canvas.delete("all")
+                
+                display_image_on_canvas(blended, output4_canvas, canvas_width, canvas_height)
             
             # Update status with direction indicator
             direction_str = "→" if direction == 1 else "←"

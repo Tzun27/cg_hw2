@@ -236,6 +236,165 @@ def blend_images(img1, img2, alpha):
     return Image.fromarray(blended_arr.astype(np.uint8))
 
 
+def blend_multiple_images(images, weights):
+    """
+    Blend multiple images using barycentric (or general) weights.
+    
+    This implements the equation: I = sum(t_i * I_hat_i) where sum(t_i) = 1
+    
+    Args:
+        images: List of PIL Images (all must be same size)
+        weights: List of weights (should sum to 1.0), one per image
+    
+    Returns:
+        Blended PIL Image
+    """
+    if len(images) == 0:
+        raise ValueError("Need at least one image to blend")
+    
+    if len(images) != len(weights):
+        raise ValueError("Number of images must match number of weights")
+    
+    # Normalize weights to sum to 1.0
+    weights = np.array(weights, dtype=float)
+    weight_sum = np.sum(weights)
+    if weight_sum > 0:
+        weights = weights / weight_sum
+    else:
+        # If all weights are 0, use equal weights
+        weights = np.ones(len(weights)) / len(weights)
+    
+    # Convert images to arrays and blend
+    arrays = [np.array(img, dtype=float) for img in images]
+    
+    # Weighted sum
+    blended_arr = np.zeros_like(arrays[0], dtype=float)
+    for i, (arr, weight) in enumerate(zip(arrays, weights)):
+        blended_arr += weight * arr
+    
+    return Image.fromarray(blended_arr.astype(np.uint8))
+
+
+def interpolate_multiple_lines(line_sets, weights):
+    """
+    Interpolate between multiple sets of feature lines using barycentric weights.
+    
+    Computes shared geometry: L_shared = sum(t_i * L_i) where sum(t_i) = 1
+    
+    Args:
+        line_sets: List of line sets, where each set is [((p_x, p_y), (q_x, q_y)), ...]
+        weights: List of weights (should sum to 1.0), one per line set
+    
+    Returns:
+        Interpolated lines representing the shared geometry
+    """
+    if len(line_sets) == 0:
+        raise ValueError("Need at least one line set")
+    
+    if len(line_sets) != len(weights):
+        raise ValueError("Number of line sets must match number of weights")
+    
+    # Normalize weights to sum to 1.0
+    weights = np.array(weights, dtype=float)
+    weight_sum = np.sum(weights)
+    if weight_sum > 0:
+        weights = weights / weight_sum
+    else:
+        weights = np.ones(len(weights)) / len(weights)
+    
+    # All line sets should have the same number of lines
+    num_lines = len(line_sets[0])
+    for line_set in line_sets:
+        if len(line_set) != num_lines:
+            raise ValueError("All line sets must have the same number of lines")
+    
+    # Interpolate each line
+    shared_lines = []
+    for line_idx in range(num_lines):
+        # Weighted average of P points
+        P_avg = np.zeros(2, dtype=float)
+        Q_avg = np.zeros(2, dtype=float)
+        
+        for line_set, weight in zip(line_sets, weights):
+            P, Q = line_set[line_idx]
+            P_avg += weight * np.array(P)
+            Q_avg += weight * np.array(Q)
+        
+        shared_lines.append((tuple(P_avg), tuple(Q_avg)))
+    
+    return shared_lines
+
+
+def merge_multiple_images(images, line_sets, weights, a=0.01, b=2.0, p=0.0):
+    """
+    Merge multiple images using barycentric coordinate blending.
+    
+    This implements the full multiple image morphing algorithm:
+    1. Compute shared geometry (weighted average of feature lines)
+    2. Warp each image to the shared geometry: I_hat_i = W_i[shared_geom](I_i)
+    3. Blend warped images: I = sum(t_i * I_hat_i)
+    
+    Args:
+        images: List of PIL Images (will be resized to match first image)
+        line_sets: List of feature line sets, one per image
+        weights: List of barycentric weights (t_i), should sum to 1.0
+        a, b, p: Warping parameters
+    
+    Returns:
+        Tuple: (merged_image, warped_images, shared_lines)
+            - merged_image: Final blended result
+            - warped_images: List of individually warped images
+            - shared_lines: The computed shared geometry
+    """
+    if len(images) == 0:
+        raise ValueError("Need at least one image")
+    
+    if not (len(images) == len(line_sets) == len(weights)):
+        raise ValueError("Number of images, line sets, and weights must match")
+    
+    # Normalize weights
+    weights = np.array(weights, dtype=float)
+    weight_sum = np.sum(weights)
+    if weight_sum > 0:
+        weights = weights / weight_sum
+    else:
+        weights = np.ones(len(weights)) / len(weights)
+    
+    # Resize all images to match the first image's size
+    target_size = images[0].size
+    resized_images = [images[0]]
+    adjusted_line_sets = [line_sets[0]]
+    
+    for i in range(1, len(images)):
+        if images[i].size != target_size:
+            resized_img = images[i].resize(target_size, Image.Resampling.LANCZOS)
+            resized_images.append(resized_img)
+            
+            # Scale the feature lines accordingly
+            scale_x = target_size[0] / images[i].size[0]
+            scale_y = target_size[1] / images[i].size[1]
+            scaled_lines = [((p[0]*scale_x, p[1]*scale_y), (q[0]*scale_x, q[1]*scale_y)) 
+                           for p, q in line_sets[i]]
+            adjusted_line_sets.append(scaled_lines)
+        else:
+            resized_images.append(images[i])
+            adjusted_line_sets.append(line_sets[i])
+    
+    # Step 1: Compute shared geometry (barycentric interpolation of feature lines)
+    shared_lines = interpolate_multiple_lines(adjusted_line_sets, weights)
+    
+    # Step 2: Warp each image to the shared geometry
+    warped_images = []
+    for i, (img, lines) in enumerate(zip(resized_images, adjusted_line_sets)):
+        warped_img = warp_image_with_lines(img, lines, shared_lines, a=a, b=b, p=p)
+        warped_images.append(warped_img)
+    
+    # Step 3: Blend the warped images using barycentric weights
+    merged_image = blend_multiple_images(warped_images, weights)
+    
+    return merged_image, warped_images, shared_lines
+
+
 def generate_grid(width, height, grid_spacing=20):
     """
     Generate a grid of horizontal and vertical lines.
